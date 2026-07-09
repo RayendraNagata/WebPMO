@@ -123,7 +123,7 @@ export default function ProjectFormPage() {
         tim,
       });
       useToastStore.getState().addToast(`Project "${nama.trim()}" updated successfully`);
-      navigate(`/projects/${slug}/${existingProject.id}`);
+      navigate(`/projects/${slug}`);
     } else if (divisiEnum) {
       const blank = createBlankProject(divisiEnum);
       const newProject = createProject({

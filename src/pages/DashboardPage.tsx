@@ -1,9 +1,8 @@
-import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { BarChart3, FolderKanban, AlertTriangle, Calendar, TrendingUp } from "lucide-react";
 import { usePMOStore } from "@/store/pmoStore";
 import type { Project, Divisi, ProjectStatus } from "@/types";
-import { DIVISI_LABELS, PROJECT_STATUS_LABELS, DIVISI_SLUG_MAP } from "@/types";
+import { DIVISI_LABELS, PROJECT_STATUS_LABELS } from "@/types";
 import { getEffectiveProgress } from "@/utils/computed";
 import { StatusBadge, ProgressBar, formatDate } from "@/components/Shared";
 import { parseISODate } from "@/utils/taskDates";
@@ -29,74 +28,59 @@ const DIVISI_SLUG_REVERSE: Record<Divisi, string> = {
 };
 
 export default function DashboardPage() {
-  // Select raw projects — filter in useMemo (avoids Zustand infinite loop)
+  // §9: all aggregations computed fresh on every render — no stale cache risk.
+  // Select the full projects array; Zustand emits a new reference on every set(),
+  // so this selector re-renders the Dashboard whenever any project changes.
   const allProjects = usePMOStore((s) => s.projects);
 
-  const projects = useMemo(
-    () => allProjects.filter((p) => !p.isArchived),
-    [allProjects]
-  );
+  // Filter archived projects inline — no intermediate useMemo that could
+  // hold a stale reference if the Dashboard stays mounted across navigation.
+  const projects = allProjects.filter((p) => !p.isArchived);
 
   // ─── 8.1 Aggregations ───
 
   const total = projects.length;
 
-  const perDivision = useMemo(() => {
-    const map: Record<Divisi, Project[]> = { HOTD1: [], HOTD2_FINANCE: [], HOTD2_NONFINANCE: [] };
-    for (const p of projects) map[p.divisi].push(p);
-    return map;
-  }, [projects]);
+  const perDivision: Record<Divisi, Project[]> = { HOTD1: [], HOTD2_FINANCE: [], HOTD2_NONFINANCE: [] };
+  for (const p of projects) perDivision[p.divisi].push(p);
 
-  const statusDistribution = useMemo(() => {
-    const map: Record<ProjectStatus, number> = {
-      NOT_STARTED: 0, ON_TRACK: 0, AT_RISK: 0, DELAYED: 0, ON_HOLD: 0, COMPLETED: 0,
-    };
-    for (const p of projects) map[p.status]++;
-    return map;
-  }, [projects]);
+  const statusDistribution: Record<ProjectStatus, number> = {
+    NOT_STARTED: 0, ON_TRACK: 0, AT_RISK: 0, DELAYED: 0, ON_HOLD: 0, COMPLETED: 0,
+  };
+  for (const p of projects) statusDistribution[p.status]++;
 
-  const avgProgress = useMemo(() => {
+  const avgProgress = (() => {
     if (projects.length === 0) return 0;
     const sum = projects.reduce((acc, p) => acc + getEffectiveProgress(p), 0);
     return Math.round(sum / projects.length);
-  }, [projects]);
+  })();
 
-  const avgProgressPerDivision = useMemo(() => {
-    const result: Record<Divisi, number> = { HOTD1: 0, HOTD2_FINANCE: 0, HOTD2_NONFINANCE: 0 };
-    for (const div of ALL_DIVISI) {
-      const divProjects = perDivision[div];
-      if (divProjects.length === 0) continue;
-      const sum = divProjects.reduce((acc, p) => acc + getEffectiveProgress(p), 0);
-      result[div] = Math.round(sum / divProjects.length);
-    }
-    return result;
-  }, [perDivision]);
+  const avgProgressPerDivision: Record<Divisi, number> = { HOTD1: 0, HOTD2_FINANCE: 0, HOTD2_NONFINANCE: 0 };
+  for (const div of ALL_DIVISI) {
+    const divProjects = perDivision[div];
+    if (divProjects.length === 0) continue;
+    const sum = divProjects.reduce((acc, p) => acc + getEffectiveProgress(p), 0);
+    avgProgressPerDivision[div] = Math.round(sum / divProjects.length);
+  }
 
-  const needsAttention = useMemo(() => {
-    return projects
-      .filter((p) => p.status === "AT_RISK" || p.status === "DELAYED")
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  }, [projects]);
+  const needsAttention = projects
+    .filter((p) => p.status === "AT_RISK" || p.status === "DELAYED")
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
   const needsAttentionCount = needsAttention.length;
 
   // Go-Live this month
-  const goLiveThisMonth = useMemo(() => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-    return projects.filter((p) => {
-      const goLive = p.timeline.goLive;
-      if (!goLive.start || !goLive.end) return false;
-      const start = parseISODate(goLive.start);
-      const end = parseISODate(goLive.end);
-      // goLive phase is active this month: start <= end of month AND end >= start of month
-      return start <= monthEnd && end >= monthStart;
-    });
-  }, [projects]);
-
-  const maxStatusCount = Math.max(...Object.values(statusDistribution), 1);
+  const goLiveThisMonth = projects.filter((p) => {
+    const goLive = p.timeline.goLive;
+    if (!goLive.start || !goLive.end) return false;
+    const start = parseISODate(goLive.start);
+    const end = parseISODate(goLive.end);
+    return start <= monthEnd && end >= monthStart;
+  });
 
   return (
     <div>
@@ -156,7 +140,6 @@ export default function DashboardPage() {
             {ALL_STATUSES.map((status) => {
               const count = statusDistribution[status];
               const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-              const barWidth = maxStatusCount > 0 ? (count / maxStatusCount) * 100 : 0;
               return (
                 <div key={status} className="flex items-center gap-3">
                   <span className="text-xs font-medium text-steel w-24 text-right flex-shrink-0">
@@ -165,7 +148,7 @@ export default function DashboardPage() {
                   <div className="flex-1 h-6 bg-surface rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${STATUS_COLORS[status]}`}
-                      style={{ width: `${barWidth}%`, minWidth: count > 0 ? "8px" : "0" }}
+                      style={{ width: `${pct}%`, minWidth: count > 0 ? "8px" : "0" }}
                     />
                   </div>
                   <span className="text-xs font-semibold text-ink w-8 text-right">{count}</span>
