@@ -156,13 +156,20 @@ export default function ProjectFormPage() {
       setPendingNavigation(target);
       setShowCancelModal(true);
     } else {
-      navigate(target);
+      navigate(target, { state: { from: "edit" } });
     }
   };
 
   const handleDiscardConfirm = () => {
     if (pendingNavigation) {
-      navigate(pendingNavigation);
+      // If discarding to go to the detail/timeline page (from "Manage Timeline & Team"),
+      // carry the from:"edit" state so the Back button on that page returns here.
+      const isDetailNav =
+        pendingNavigation === `/projects/${slug}/${projectId}`;
+      navigate(
+        pendingNavigation,
+        isDetailNav ? { state: { from: "edit" } } : undefined
+      );
     } else {
       navigate(-1);
     }

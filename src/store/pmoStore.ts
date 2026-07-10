@@ -234,6 +234,17 @@ export const usePMOStore = create<PMOStore>()(
 
       createProject: (data) => {
         const timestamp = now();
+        // Re-derive a safe counter from the CURRENT persisted projects array
+        // before generating an id. This guards against the module-level counter
+        // being stale after a page reload (initCounters only runs against seed
+        // data at module-load time, not against the persisted state).
+        const currentProjects = get().projects;
+        const maxExisting = currentProjects.reduce((max, p) => {
+          const n = parseInt(p.id.replace("p", ""), 10);
+          return !isNaN(n) && n > max ? n : max;
+        }, projectCounter);
+        if (maxExisting > projectCounter) projectCounter = maxExisting;
+
         const project: Project = {
           ...data,
           id: generateProjectId(),

@@ -1,4 +1,4 @@
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useLocation } from "react-router-dom";
 import { ArrowLeft, Edit, Trash2 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { usePMOStore } from "@/store/pmoStore";
@@ -17,11 +17,23 @@ import { useToastStore } from "@/store/toastStore";
 export default function ProjectDetailPage() {
   const { divisi, projectId } = useParams<{ divisi: string; projectId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const slug = divisi ?? "";
   const divisiEnum = divisi ? DIVISI_SLUG_MAP[divisi] : undefined;
   const divisiLabel = divisiEnum ? DIVISI_LABELS[divisiEnum] : "";
 
-  const project = usePMOStore((s) => (projectId ? s.getProjectById(projectId) : undefined));
+  // If the user arrived here via "Manage Timeline & Team" from the edit form,
+  // the Back button should return them to the edit form, not the project list.
+  const cameFromEdit =
+    (location.state as { from?: string } | null)?.from === "edit";
+  const backTo = cameFromEdit
+    ? `/projects/${slug}/${projectId}/edit`
+    : `/projects/${slug}`;
+  const backLabel = cameFromEdit ? "Back to Edit" : `Back to ${divisiLabel}`;
+
+  const project = usePMOStore((s) =>
+    projectId ? s.projects.find((p) => p.id === projectId) : undefined
+  );
   const archiveProject = usePMOStore((s) => s.archiveProject);
   const deleteProject = usePMOStore((s) => s.deleteProject);
   const updatePhase = usePMOStore((s) => s.updatePhase);
@@ -259,11 +271,11 @@ export default function ProjectDetailPage() {
     <div>
       {/* Breadcrumb */}
       <Link
-        to={`/projects/${slug}`}
+        to={backTo}
         className="inline-flex items-center gap-1.5 text-sm text-steel hover:text-ink mb-6 transition-colors"
       >
         <ArrowLeft size={15} />
-        Back to {divisiLabel}
+        {backLabel}
       </Link>
 
       {/* Header */}
