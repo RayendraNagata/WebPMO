@@ -82,6 +82,23 @@ The app runs at `http://localhost:5173` by default. No environment variables, au
 
 ---
 
+## Deployment
+
+The app is deployed to GitHub Pages at:
+
+**https://rayendranagata.github.io/WebPMO/**
+
+Deployment is fully automated via GitHub Actions (`.github/workflows/deploy.yml`) — every push to `main` triggers a fresh build and deploy. No manual steps needed after the initial setup.
+
+**How it works:**
+- Vite builds with `base: "/WebPMO/"` so all asset paths are correctly prefixed
+- React Router uses `basename={import.meta.env.BASE_URL}` (resolves to `/WebPMO/` in production, `/` in dev) so routes match correctly under the subdirectory
+- A `public/404.html` redirect script handles direct URL navigation and browser refresh — GitHub Pages would otherwise 404 on any non-root path
+
+**Note on peer dependencies:** `gantt-task-react@0.3.9` declares `react@^18` in its peer dependencies but works correctly on React 19 (uses only standard hooks). A `.npmrc` file sets `legacy-peer-deps=true` so `npm ci` in CI doesn't error on this stale declaration.
+
+---
+
 ## Data Persistence
 
 Data is stored in the browser under two `localStorage` keys:
