@@ -96,8 +96,8 @@ export default function ProjectListPage() {
         } else if (sortKey === "progress") {
           cmp = getEffectiveProgress(a) - getEffectiveProgress(b);
         } else if (sortKey === "targetSelesai") {
-          const aEnd = a.timeline.supportGoLive.end ?? "";
-          const bEnd = b.timeline.supportGoLive.end ?? "";
+          const aEnd = a.timeline.projectHandover.end ?? "";
+          const bEnd = b.timeline.projectHandover.end ?? "";
           cmp = aEnd.localeCompare(bEnd);
         }
         return sortDir === "asc" ? cmp : -cmp;
@@ -197,7 +197,7 @@ export default function ProjectListPage() {
                 : "bg-canvas text-ink border-hairline-strong hover:bg-surface"
             }`}
           >
-            Status{statusFilters.size > 0 ? ` (${statusFilters.size})` : ""}
+            Label Project{statusFilters.size > 0 ? ` (${statusFilters.size})` : ""}
             <ArrowUpDown size={13} />
           </button>
           {showStatusDropdown && (
@@ -247,8 +247,8 @@ export default function ProjectListPage() {
           <thead>
             <tr className="border-b border-hairline-soft bg-surface/50">
               <ThSort label="Project Name" sortKey="nama" current={sortKey} dir={sortDir} onToggle={toggleSort} />
-              <th className="text-left px-4 py-3 text-xs font-semibold text-steel uppercase tracking-wide">Status</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-steel uppercase tracking-wide">Active Phase</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-steel uppercase tracking-wide">Label Project</th>
+              <th className="text-left px-4 py-3 text-xs font-semibold text-steel uppercase tracking-wide">Status Project</th>
               <ThSort label="Progress" sortKey="progress" current={sortKey} dir={sortDir} onToggle={toggleSort} />
               <th className="text-left px-4 py-3 text-xs font-semibold text-steel uppercase tracking-wide">Start</th>
               <ThSort label="Target End" sortKey="targetSelesai" current={sortKey} dir={sortDir} onToggle={toggleSort} />
@@ -286,8 +286,8 @@ function ProjectRow({ project, slug }: { project: Project; slug: string }) {
   const progress = getEffectiveProgress(project);
   const teamCount = getUniqueTeamCount(project);
   const hasDelay = projectHasPotentialDelay(project);
-  const startDate = project.timeline.discovery.start;
-  const endDate = project.timeline.supportGoLive.end;
+  const startDate = project.timeline.userRequirement.start;
+  const endDate = project.timeline.projectHandover.end;
 
   return (
     <>

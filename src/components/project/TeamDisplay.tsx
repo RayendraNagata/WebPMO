@@ -7,7 +7,7 @@ interface Props {
   tim: TeamAssignment;
 }
 
-const ROLES = ["BPA", "DEV", "PQA"] as const;
+const ROLES = ["Product Manager", "BSM", "BPA", "UI/UX", "DEV", "PQA", "ABAP"] as const;
 
 export default function TeamDisplay({ tim }: Props) {
   const allMembers = usePMOStore((s) => s.teamMembers);

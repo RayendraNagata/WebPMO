@@ -16,12 +16,15 @@ interface Props {
 
 // ─── Color palette for phase bars ───
 const PHASE_COLORS: Record<PhaseKey, string> = {
-  discovery: "#4262ff",
-  development: "#0fbcb0",
-  testing: "#f59e0b",
-  uat: "#8b5cf6",
-  goLive: "#ef4444",
-  supportGoLive: "#6b7280",
+  userRequirement:           "#4262ff", // blue        (was discovery)
+  development:               "#0fbcb0", // teal
+  testing:                   "#f59e0b", // amber
+  uat:                       "#8b5cf6", // purple
+  pentest:                   "#ef4444", // red
+  defectdojo:                "#f97316", // orange
+  goLive:                    "#10b981", // green
+  postImplementationSupport: "#6b7280", // gray        (was supportGoLive)
+  projectHandover:           "#0ea5e9", // sky blue
 };
 
 /** Slightly desaturated/lighter tint for task child bars */
@@ -138,26 +141,8 @@ export default function ProjectGanttChart({ project, onDateChange, onAddTask }: 
       }
     }
 
-    // ── Milestones ──
-    for (const m of project.milestones) {
-      const mDate = parseISODate(m.tanggal);
-      result.push({
-        id: `milestone-${m.id}`,
-        type: "milestone",
-        name: m.nama,
-        start: mDate,
-        end: mDate,
-        progress: 0,
-        isDisabled: true,
-        styles: {
-          backgroundColor: "#ffd02f",
-          backgroundSelectedColor: "#fcb900",
-        },
-      });
-    }
-
     return result;
-  }, [project.timeline, project.milestones, collapsedPhases]);
+  }, [project.timeline, collapsedPhases]);
 
   // ─── Handle drag on phase bars (task bars are isDisabled so won't fire) ───
   const handleDateChange = useCallback(
@@ -249,10 +234,6 @@ export default function ProjectGanttChart({ project, onDateChange, onAddTask }: 
         <span className="inline-flex items-center gap-1.5">
           <span className="w-3 h-3 rounded-sm bg-gray-200" />
           Baseline
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block w-2.5 h-2.5 rotate-45 bg-brand-yellow" />
-          Milestone
         </span>
       </div>
 
@@ -347,27 +328,22 @@ function CustomTooltip({
 }) {
   const isBaseline = task.id.startsWith("baseline-");
   const isTaskChild = task.id.startsWith("task-");
-  const isMilestone = task.type === "milestone";
 
   return (
     <div className="bg-ink text-white rounded-lg px-3 py-2 text-xs shadow-lg max-w-[220px]">
       <p className="font-medium mb-0.5">{task.name}</p>
-      {isMilestone ? (
-        <p className="text-white/70">{formatDate(task.start.toISOString())}</p>
-      ) : (
-        <div className="text-white/70 space-y-0.5">
-          <p>
-            {formatDate(task.start.toISOString())} →{" "}
-            {formatDate(task.end.toISOString())}
-          </p>
-          {isBaseline && (
-            <p className="text-white/50 italic">Baseline plan</p>
-          )}
-          {isTaskChild && (
-            <p className="text-white/50 italic">Computed from duration &amp; predecessors</p>
-          )}
-        </div>
-      )}
+      <div className="text-white/70 space-y-0.5">
+        <p>
+          {formatDate(task.start.toISOString())} →{" "}
+          {formatDate(task.end.toISOString())}
+        </p>
+        {isBaseline && (
+          <p className="text-white/50 italic">Baseline plan</p>
+        )}
+        {isTaskChild && (
+          <p className="text-white/50 italic">Computed from duration &amp; predecessors</p>
+        )}
+      </div>
     </div>
   );
 }

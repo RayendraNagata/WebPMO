@@ -11,12 +11,15 @@ export type ProjectStatus =
   | "COMPLETED";
 
 export type PhaseKey =
-  | "discovery"
-  | "development"
-  | "testing"
-  | "uat"
-  | "goLive"
-  | "supportGoLive";
+  | "userRequirement"            // 1. User Requirement
+  | "development"                // 2. Development
+  | "testing"                    // 3. Testing
+  | "uat"                        // 4. UAT
+  | "pentest"                    // 5. Pentest
+  | "defectdojo"                 // 6. Defectdojo (Code Quality)
+  | "goLive"                     // 7. Go Live
+  | "postImplementationSupport"  // 8. Post Implementation Support
+  | "projectHandover";           // 9. Project Handover
 
 export type PhaseStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
@@ -27,7 +30,7 @@ export interface Task {
   phaseKey: PhaseKey; // task ini milik fase yang mana
   nama: string;
   durationMandays: number; // dalam hari kerja, boleh desimal (misal 0.5)
-  predecessorIds: string[]; // id Task lain — HANYA task di fase yang SAMA
+  predecessorIds: string[]; // id Task lain — cross-phase (§6.10)
   start: string | null; // COMPUTED, jangan diisi manual
   end: string | null; // COMPUTED, jangan diisi manual
   status: TaskStatus;
@@ -46,17 +49,51 @@ export interface PhaseData {
   tasks: Task[]; // kalau array ini kosong, fase pakai tanggal manual seperti sekarang
 }
 
-export interface Milestone {
-  id: string;
-  nama: string;
-  tanggal: string; // ISO date
+// ─── §6.12: Project Documentation Checklist ───
+// Replaces the old free-form Milestone concept.
+// 13 fixed items per project — user only fills tanggal + link per row.
+export interface ProjectDocumentation {
+  id: string;           // fixed slug, e.g. "PROJECT_CHARTER", "RDM"
+  nomor: number;        // 1–13, fixed display order
+  nama: string;         // fixed label, e.g. "PROJECT CHARTER"
+  tanggal: string | null; // ISO date, user-filled, optional
+  link: string | null;    // URL, user-filled, optional
+}
+
+/** The 13 fixed documentation items, in order. Used to seed and migrate. */
+export const DOCUMENTATION_ITEMS: ReadonlyArray<Pick<ProjectDocumentation, "id" | "nomor" | "nama">> = [
+  { nomor: 1,  id: "PROJECT_CHARTER",  nama: "PROJECT CHARTER" },
+  { nomor: 2,  id: "RDM",              nama: "RDM" },
+  { nomor: 3,  id: "BPS",              nama: "BPS" },
+  { nomor: 4,  id: "HLD_TSD",          nama: "HLD/TSD" },
+  { nomor: 5,  id: "TEST_PLAN",        nama: "TEST PLAN" },
+  { nomor: 6,  id: "UAT_REPORT",       nama: "UAT REPORT" },
+  { nomor: 7,  id: "JUKLAK",           nama: "JUKLAK" },
+  { nomor: 8,  id: "PENTEST_REPORT",   nama: "PENTEST REPORT" },
+  { nomor: 9,  id: "WI_DEPLOY",        nama: "WI DEPLOY" },
+  { nomor: 10, id: "SOURCE_CODE",      nama: "SOURCE CODE" },
+  { nomor: 11, id: "APPS_FORM",        nama: "APPS FORM" },
+  { nomor: 12, id: "FAQ",              nama: "FAQ (if any)" },
+  { nomor: 13, id: "PROJECT_CLOSURE",  nama: "PROJECT CLOSURE" },
+] as const;
+
+/** Returns a fresh 13-item documentation array with all fields empty. */
+export function createEmptyDocumentation(): ProjectDocumentation[] {
+  return DOCUMENTATION_ITEMS.map((item) => ({
+    ...item,
+    tanggal: null,
+    link: null,
+  }));
 }
 
 export interface TeamAssignment {
-  BPA: string[]; // array of TeamMember.id
+  "Product Manager": string[];
+  BSM: string[];
+  BPA: string[];
+  "UI/UX": string[];
   DEV: string[];
   PQA: string[];
-  // role lain bisa ditambah sebagai key baru di objek ini
+  ABAP: string[];
 }
 
 export interface Project {
@@ -69,7 +106,7 @@ export interface Project {
   progressMode: "manual" | "auto";
   tim: TeamAssignment;
   timeline: Record<PhaseKey, PhaseData>;
-  milestones: Milestone[];
+  documentation: ProjectDocumentation[]; // §6.12 — replaces milestones
   isArchived: boolean;
   createdAt: string;
   updatedAt: string;
@@ -93,21 +130,27 @@ export interface Holiday {
 // ─── Helpers & Constants ───
 
 export const PHASE_ORDER: PhaseKey[] = [
-  "discovery",
+  "userRequirement",
   "development",
   "testing",
   "uat",
+  "pentest",
+  "defectdojo",
   "goLive",
-  "supportGoLive",
+  "postImplementationSupport",
+  "projectHandover",
 ] as const;
 
 export const PHASE_LABELS: Record<PhaseKey, string> = {
-  discovery: "Discovery",
-  development: "Development",
-  testing: "Testing",
-  uat: "UAT",
-  goLive: "Go Live",
-  supportGoLive: "Support Go Live",
+  userRequirement:           "User Requirement",
+  development:               "Development",
+  testing:                   "Testing",
+  uat:                       "UAT",
+  pentest:                   "Pentest",
+  defectdojo:                "Defectdojo (Code Quality)",
+  goLive:                    "Go Live",
+  postImplementationSupport: "Post Implementation Support",
+  projectHandover:           "Project Handover",
 };
 
 export const DIVISI_LABELS: Record<Divisi, string> = {
@@ -145,11 +188,24 @@ export function createEmptyPhase(): PhaseData {
   };
 }
 
-/** Creates a full empty timeline (all 6 phases) */
+/** Creates a full empty timeline (all 9 phases) */
 export function createEmptyTimeline(): Record<PhaseKey, PhaseData> {
   return Object.fromEntries(
     PHASE_ORDER.map((key) => [key, createEmptyPhase()])
   ) as Record<PhaseKey, PhaseData>;
+}
+
+/** Creates an empty TeamAssignment with all 7 roles */
+export function createEmptyTim(): TeamAssignment {
+  return {
+    "Product Manager": [],
+    BSM:  [],
+    BPA:  [],
+    "UI/UX": [],
+    DEV:  [],
+    PQA:  [],
+    ABAP: [],
+  };
 }
 
 /** Creates a blank Project with sensible defaults */
@@ -161,9 +217,9 @@ export function createBlankProject(divisi: Divisi): Omit<Project, "id" | "create
     status: "NOT_STARTED",
     progress: 0,
     progressMode: "manual",
-    tim: { BPA: [], DEV: [], PQA: [] },
+    tim: { "Product Manager": [], BSM: [], BPA: [], "UI/UX": [], DEV: [], PQA: [], ABAP: [] },
     timeline: createEmptyTimeline(),
-    milestones: [],
+    documentation: createEmptyDocumentation(),
     isArchived: false,
   };
 }

@@ -8,7 +8,7 @@ interface Props {
   onChange: (tim: TeamAssignmentType) => void;
 }
 
-const ROLES = ["BPA", "DEV", "PQA"] as const;
+const ROLES = ["Product Manager", "BSM", "BPA", "UI/UX", "DEV", "PQA", "ABAP"] as const;
 
 export default function TeamAssignment({ value, onChange }: Props) {
   return (

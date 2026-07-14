@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { ArrowLeft, Info, ExternalLink } from "lucide-react";
 import { usePMOStore } from "@/store/pmoStore";
 import type { ProjectStatus, TeamAssignment } from "@/types";
-import { DIVISI_SLUG_MAP, DIVISI_LABELS, PROJECT_STATUS_LABELS, createBlankProject } from "@/types";
+import { DIVISI_SLUG_MAP, DIVISI_LABELS, PROJECT_STATUS_LABELS, createBlankProject, createEmptyTim } from "@/types";
 import { calculateAutoProgress } from "@/utils/computed";
 import TeamAssignmentComponent from "@/components/project/TeamAssignment";
 import { useToastStore } from "@/store/toastStore";
@@ -19,7 +19,9 @@ function validate(nama: string, deskripsi: string): FormErrors {
   if (!nama.trim()) errors.nama = "Project name is required";
   else if (nama.trim().length < 3) errors.nama = "Minimum 3 characters";
   else if (nama.length > 100) errors.nama = "Maximum 100 characters";
-  if (deskripsi.length > 500) errors.deskripsi = "Maximum 500 characters";
+  if (!deskripsi.trim()) errors.deskripsi = "Description is required";
+  else if (deskripsi.trim().length < 3) errors.deskripsi = "Minimum 3 characters";
+  else if (deskripsi.length > 500) errors.deskripsi = "Maximum 500 characters";
   return errors;
 }
 
@@ -45,7 +47,7 @@ export default function ProjectFormPage() {
   const [status, setStatus] = useState<ProjectStatus>("NOT_STARTED");
   const [progress, setProgress] = useState(0);
   const [progressMode, setProgressMode] = useState<"manual" | "auto">("manual");
-  const [tim, setTim] = useState<TeamAssignment>({ BPA: [], DEV: [], PQA: [] });
+  const [tim, setTim] = useState<TeamAssignment>(createEmptyTim());
   const [errors, setErrors] = useState<FormErrors>({});
   const [isDirty, setIsDirty] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -84,7 +86,7 @@ export default function ProjectFormPage() {
       status: "NOT_STARTED" as ProjectStatus,
       progress: 0,
       progressMode: "manual" as const,
-      tim: { BPA: [], DEV: [], PQA: [] } as TeamAssignment,
+      tim: createEmptyTim(),
     };
   }, [existingProject]);
 
@@ -260,12 +262,14 @@ export default function ProjectFormPage() {
 
           {/* Deskripsi */}
           <div>
-            <label className="block text-sm font-medium text-ink mb-1.5">Description</label>
+            <label className="block text-sm font-medium text-ink mb-1.5">
+              Description <span className="text-danger">*</span>
+            </label>
             <textarea
               rows={3}
               value={deskripsi}
               onChange={(e) => setDeskripsi(e.target.value)}
-              placeholder="Brief description (optional)"
+              placeholder="Brief description of this project"
               maxLength={500}
               className={`w-full px-4 py-3 border rounded-lg text-base text-ink bg-canvas outline-none transition resize-none
                 ${errors.deskripsi ? "border-danger focus:border-danger focus:ring-2 focus:ring-danger/20" : "border-hairline-strong focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20"}`}
@@ -277,7 +281,7 @@ export default function ProjectFormPage() {
           {/* Status */}
           <div>
             <label className="block text-sm font-medium text-ink mb-1.5">
-              Status <span className="text-danger">*</span>
+              Label Project <span className="text-danger">*</span>
             </label>
             <select
               value={status}
@@ -343,6 +347,9 @@ export default function ProjectFormPage() {
           </div>
         </div>
 
+        {/* Team Assignment */}
+        <TeamAssignmentComponent value={tim} onChange={setTim} />
+
         {/* Timeline SDLC — placeholder with link to detail in edit mode */}
         <div className="bg-canvas rounded-xl border border-hairline-soft p-6">
           <h3 className="text-sm font-medium text-ink mb-2">Timeline SDLC</h3>
@@ -361,14 +368,11 @@ export default function ProjectFormPage() {
           )}
         </div>
 
-        {/* Team Assignment */}
-        <TeamAssignmentComponent value={tim} onChange={setTim} />
-
         {/* Actions */}
         <div className="flex items-center gap-3">
           <button
             type="submit"
-            disabled={hasErrors || !nama.trim()}
+            disabled={hasErrors || !nama.trim() || !deskripsi.trim()}
             className="bg-primary text-on-primary px-6 py-2.5 rounded-full text-sm font-medium hover:bg-charcoal transition-colors disabled:bg-hairline disabled:text-muted disabled:cursor-not-allowed"
           >
             {isEdit ? "Save Changes" : "Create Project"}

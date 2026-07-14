@@ -3,13 +3,13 @@ import { ArrowLeft, Edit, Trash2 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { usePMOStore } from "@/store/pmoStore";
 import { DIVISI_SLUG_MAP, DIVISI_LABELS, PHASE_ORDER, PHASE_LABELS } from "@/types";
-import type { PhaseKey, PhaseStatus, Task } from "@/types";
+import type { PhaseKey, PhaseStatus, Task, ProjectDocumentation } from "@/types";
 import { getActivePhase, activePhaseLabel, getEffectiveProgress } from "@/utils/computed";
 import { StatusBadge, ProgressBar, formatDate } from "@/components/Shared";
 import { parseISODate } from "@/utils/taskDates";
 import TimelineTable from "@/components/project/TimelineTable";
 import ProjectGanttChart from "@/components/project/GanttChart";
-import MilestoneSection from "@/components/project/MilestoneSection";
+import DocumentationSection from "@/components/project/DocumentationSection";
 import CascadeModal from "@/components/project/CascadeModal";
 import TeamDisplay from "@/components/project/TeamDisplay";
 import { useToastStore } from "@/store/toastStore";
@@ -38,9 +38,7 @@ export default function ProjectDetailPage() {
   const deleteProject = usePMOStore((s) => s.deleteProject);
   const updatePhase = usePMOStore((s) => s.updatePhase);
   const resetBaseline = usePMOStore((s) => s.resetBaseline);
-  const addMilestone = usePMOStore((s) => s.addMilestone);
-  const updateMilestone = usePMOStore((s) => s.updateMilestone);
-  const removeMilestone = usePMOStore((s) => s.removeMilestone);
+  const updateDocumentation = usePMOStore((s) => s.updateDocumentation);
   const addTask = usePMOStore((s) => s.addTask);
   const updateTask = usePMOStore((s) => s.updateTask);
   const removeTask = usePMOStore((s) => s.removeTask);
@@ -84,7 +82,7 @@ export default function ProjectDetailPage() {
     navigate(`/projects/${slug}`);
   };
 
-  // ─── Phase date change from TimelineTable (input table) ───
+  // ─── Phase date change from TimelineTable ───
   const handlePhaseDateChange = useCallback(
     (phaseKey: PhaseKey, field: "start" | "end", value: string) => {
       updatePhase(project.id, phaseKey, { [field]: value });
@@ -118,7 +116,6 @@ export default function ProjectDetailPage() {
       const startStr = newStart.toISOString().slice(0, 10);
       const endStr = newEnd.toISOString().slice(0, 10);
 
-      // Check overlap with next phase
       if (idx < PHASE_ORDER.length - 1) {
         const nextKey = PHASE_ORDER[idx + 1];
         const nextPhase = project.timeline[nextKey];
@@ -126,11 +123,9 @@ export default function ProjectDetailPage() {
         if (nextPhase.start) {
           const nextStart = parseISODate(nextPhase.start);
           if (newEnd > nextStart) {
-            // Overlap detected — show cascade modal
             const shiftDays = Math.ceil(
               (newEnd.getTime() - nextStart.getTime()) / (1000 * 60 * 60 * 24)
             );
-            // Collect all following phases that have dates
             const affected: string[] = [];
             for (let i = idx + 1; i < PHASE_ORDER.length; i++) {
               const pk = PHASE_ORDER[i];
@@ -146,12 +141,11 @@ export default function ProjectDetailPage() {
               newStart,
               newEnd,
             });
-            return; // Don't apply yet — wait for modal decision
+            return;
           }
         }
       }
 
-      // No overlap — apply directly
       updatePhase(project.id, phaseKey, { start: startStr, end: endStr });
     },
     [project.id, project.timeline, updatePhase]
@@ -165,10 +159,8 @@ export default function ProjectDetailPage() {
     const startStr = newStart.toISOString().slice(0, 10);
     const endStr = newEnd.toISOString().slice(0, 10);
 
-    // Apply the dragged phase change
     updatePhase(project.id, phaseKey, { start: startStr, end: endStr });
 
-    // Shift all following phases by shiftDays
     for (let i = idx + 1; i < PHASE_ORDER.length; i++) {
       const pk = PHASE_ORDER[i];
       const phase = project.timeline[pk];
@@ -192,7 +184,6 @@ export default function ProjectDetailPage() {
   // ─── Cascade: leave manual ───
   const handleCascadeManual = useCallback(() => {
     if (!cascadeInfo) return;
-    // Apply just the dragged phase, let user fix the rest
     const { phaseKey, newStart, newEnd } = cascadeInfo;
     updatePhase(project.id, phaseKey, {
       start: newStart.toISOString().slice(0, 10),
@@ -201,30 +192,12 @@ export default function ProjectDetailPage() {
     setCascadeInfo(null);
   }, [cascadeInfo, project.id, updatePhase]);
 
-  // ─── Milestone CRUD ───
-  const handleAddMilestone = useCallback(
-    (nama: string, tanggal: string) => {
-      addMilestone(project.id, { nama, tanggal });
-      useToastStore.getState().addToast(`Milestone "${nama}" added`);
+  // ─── §6.12 Documentation update (auto-save per field) ───
+  const handleUpdateDocumentation = useCallback(
+    (docId: string, data: Partial<Pick<ProjectDocumentation, "tanggal" | "link">>) => {
+      updateDocumentation(project.id, docId, data);
     },
-    [project.id, addMilestone]
-  );
-
-  const handleUpdateMilestone = useCallback(
-    (id: string, data: { nama?: string; tanggal?: string }) => {
-      updateMilestone(project.id, id, data);
-      useToastStore.getState().addToast("Milestone updated");
-    },
-    [project.id, updateMilestone]
-  );
-
-  const handleRemoveMilestone = useCallback(
-    (id: string) => {
-      removeMilestone(project.id, id);
-      // Note: MilestoneSection handles the undo toast for milestone removal
-      // (5-second undo window per spec §6.7). No additional toast here.
-    },
-    [project.id, removeMilestone]
+    [project.id, updateDocumentation]
   );
 
   // ─── Task CRUD ───
@@ -309,7 +282,7 @@ export default function ProjectDetailPage() {
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <SummaryCard label="Active Phase" value={phaseLbl} />
+        <SummaryCard label="Status Project" value={phaseLbl} />
         <SummaryCard
           label="Progress"
           value={`${progress}%`}
@@ -319,8 +292,8 @@ export default function ProjectDetailPage() {
             </div>
           }
         />
-        <SummaryCard label="Start Date" value={formatDate(project.timeline.discovery.start)} />
-        <SummaryCard label="Target End" value={formatDate(project.timeline.supportGoLive.end)} />
+        <SummaryCard label="Start Date" value={formatDate(project.timeline.userRequirement.start)} />
+        <SummaryCard label="Target End" value={formatDate(project.timeline.projectHandover.end)} />
       </div>
 
       {/* Sections */}
@@ -343,12 +316,10 @@ export default function ProjectDetailPage() {
           onAddTask={handleAddTask}
         />
 
-        {/* Milestones — CRUD */}
-        <MilestoneSection
-          milestones={project.milestones}
-          onAdd={handleAddMilestone}
-          onUpdate={handleUpdateMilestone}
-          onRemove={handleRemoveMilestone}
+        {/* §6.12 Dokumentasi Project — 13 fixed rows */}
+        <DocumentationSection
+          documentation={project.documentation}
+          onUpdate={handleUpdateDocumentation}
         />
 
         {/* Team */}

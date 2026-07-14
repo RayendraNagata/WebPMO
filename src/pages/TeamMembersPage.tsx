@@ -5,7 +5,7 @@ import type { TeamMember } from "@/types";
 import { useToastStore } from "@/store/toastStore";
 
 // ─── Role options (extensible) ───
-const ROLE_OPTIONS = ["BPA", "DEV", "PQA"];
+const ROLE_OPTIONS = ["Product Manager", "BSM", "BPA", "UI/UX", "DEV", "PQA", "ABAP"];
 
 // ─── Blank form state ───
 interface MemberForm {

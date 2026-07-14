@@ -1,5 +1,5 @@
 import type { Project, PhaseKey, PhaseData, PhaseStatus } from "@/types";
-import { PHASE_ORDER } from "@/types";
+import { PHASE_ORDER, PHASE_LABELS } from "@/types";
 // parseISODate constructs dates from local year/month/day components,
 // avoiding the UTC-midnight shift that new Date("YYYY-MM-DD") causes in
 // positive-offset timezones.
@@ -47,14 +47,14 @@ export function getActivePhase(project: Project, today?: Date): ActivePhaseResul
   }
 
   // No phase matches today — determine why
-  const discoveryStart = project.timeline.discovery.start;
-  const supportEnd = project.timeline.supportGoLive.end;
+  const firstPhaseStart = project.timeline[PHASE_ORDER[0]].start;
+  const lastPhaseEnd = project.timeline[PHASE_ORDER[PHASE_ORDER.length - 1]].end;
 
-  if (discoveryStart && now < parseISODate(discoveryStart)) {
+  if (firstPhaseStart && now < parseISODate(firstPhaseStart)) {
     return { type: "not_started" };
   }
 
-  if (supportEnd && now > parseISODate(supportEnd)) {
+  if (lastPhaseEnd && now > parseISODate(lastPhaseEnd)) {
     return { type: "completed" };
   }
 
@@ -65,15 +65,7 @@ export function getActivePhase(project: Project, today?: Date): ActivePhaseResul
 export function activePhaseLabel(result: ActivePhaseResult): string {
   switch (result.type) {
     case "phase": {
-      const labels: Record<PhaseKey, string> = {
-        discovery: "Discovery",
-        development: "Development",
-        testing: "Testing",
-        uat: "UAT",
-        goLive: "Go Live",
-        supportGoLive: "Support Go Live",
-      };
-      return labels[result.phaseKey];
+      return PHASE_LABELS[result.phaseKey];
     }
     case "not_started":
       return "Belum Mulai";
@@ -87,7 +79,7 @@ export function activePhaseLabel(result: ActivePhaseResult): string {
 // ─── draft.md 6.6: Auto-calculate progress ───
 
 export function calculateAutoProgress(project: Project, today?: Date): number {
-  const totalFase = PHASE_ORDER.length; // 6
+  const totalFase = PHASE_ORDER.length; // dynamic — currently 9
   let faseSelesai = 0;
 
   for (const key of PHASE_ORDER) {

@@ -134,7 +134,7 @@ export default function DashboardPage() {
         <div className="bg-canvas rounded-xl border border-hairline-soft p-6">
           <div className="flex items-center gap-2.5 mb-5">
             <BarChart3 size={18} className="text-slate" />
-            <h2 className="text-base font-medium text-ink">Status Distribution</h2>
+            <h2 className="text-base font-medium text-ink">Label Project Distribution</h2>
           </div>
           <div className="space-y-3">
             {ALL_STATUSES.map((status) => {

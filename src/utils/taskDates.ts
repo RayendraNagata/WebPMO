@@ -409,14 +409,37 @@ export function normalizeTimeline(
   today: Date = new Date(),
   holidays: Set<string> = new Set()
 ): Record<PhaseKey, PhaseData> {
+  // Collect ALL tasks across all phases for project-wide recompute (§6.10).
+  // Using per-phase normalizePhaseData here would silently strip cross-phase
+  // predecessorIds because each phase's map only contains same-phase tasks.
+  const allTasks: Task[] = PHASE_ORDER.flatMap(
+    (key) => (timeline[key] ?? createEmptyPhase()).tasks ?? []
+  );
+
+  // Run project-wide topological sort + date recompute
+  const recomputedByPhase = recomputeProjectTasks(allTasks, today, holidays);
+
   return Object.fromEntries(
-    PHASE_ORDER.map((key) => [
-      key,
-      normalizePhaseData(
-        timeline[key] ?? createEmptyPhase(),
-        today,
-        holidays
-      ),
-    ])
+    PHASE_ORDER.map((key) => {
+      const phase = timeline[key] ?? createEmptyPhase();
+      const tasks = recomputedByPhase.get(key) ?? [];
+
+      if (tasks.length === 0) {
+        return [key, { ...phase, tasks: [] }];
+      }
+
+      const rollup = rollupPhaseDates(tasks);
+      return [
+        key,
+        {
+          ...phase,
+          tasks,
+          ...rollup,
+          status: phase.statusManualOverride
+            ? phase.status
+            : derivePhaseStatus({ ...phase, ...rollup }, today),
+        },
+      ];
+    })
   ) as Record<PhaseKey, PhaseData>;
 }

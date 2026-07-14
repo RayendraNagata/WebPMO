@@ -466,6 +466,155 @@ stabil, disarankan:
   circular dependency check) SETELAH perubahan ini, karena mengubah scope predecessor
   berpotensi mempengaruhi logic yang sudah jalan
 
+
+
+## 6.11 Revised SDLC Phase Structure
+
+### Perubahan
+Fase SDLC yang sebelumnya 6 (`discovery, development, testing, uat, goLive,
+supportGoLive`) diganti jadi **9 fase baru**, urutan tetap:
+
+```ts
+type PhaseKey =
+  | "userRequirement"           // 1. User Requirement
+  | "development"                // 2. Development
+  | "testing"                    // 3. Testing
+  | "uat"                        // 4. UAT
+  | "pentest"                    // 5. Pentest
+  | "defectdojo"                 // 6. Defectdojo (Code Quality)
+  | "goLive"                     // 7. Go Live
+  | "postImplementationSupport"  // 8. Post Implementation Support
+  | "projectHandover";           // 9. Project Handover
+```
+
+Semua aturan lain yang berlaku ke fase (baseline capture, drag-reschedule, cascade
+dependency, status auto-derive, task WBS di dalamnya per section 6.9, dst) **tetap
+berlaku sama persis**, cuma sekarang ada 9 baris bukan 6.
+
+### Aturan Khusus: Post Implementation Support (fase ke-8)
+- Saat tanggal mulai fase ini pertama kali di-set (baseline capture seperti biasa),
+  **tanggal selesai default-nya otomatis = tanggal mulai + 3 bulan**, bukan kosong.
+- User tetap bisa **override manual** tanggal selesainya kapan aja, sama seperti fase
+  lain — 3 bulan itu cuma default awal, bukan dikunci.
+- Semua fase lain (1-7, 9) tetap tanpa default durasi, isi manual seperti biasa.
+
+### Dampak ke Bagian Lain yang Perlu Disesuaikan
+Karena angka "6" dan nama-nama fase lama kemungkinan di-hardcode di beberapa tempat,
+cek dan update SEMUA ini:
+
+1. **Progress auto-calculate (section 6.6):** formula `faseSelesai / 6` harus jadi
+   `faseSelesai / 9` (atau lebih aman: `faseSelesai / totalFase` yang dihitung dinamis
+   dari panjang array PhaseKey, bukan angka hardcoded — supaya kalau nanti fase berubah
+   lagi nggak perlu cari-cari tempat lain).
+2. **Cascade dependency (section 6.4):** urutan sequential sekarang 9 fase, bukan 6.
+3. **Seed data (section 10):** update seed project yang ada supaya pakai struktur fase
+   baru, bukan struktur lama.
+4. **Semua label UI** yang nampilin nama fase (Timeline table, Gantt chart, dropdown
+   status fase, dsb) — pastikan nama tampil sesuai (misal "User Requirement" bukan
+   "userRequirement" mentah, "Post Implementation Support" bukan disingkat).
+5. **Task.phaseKey** (section 6.9) — tipe-nya reference ke PhaseKey, otomatis ikut
+   berubah, tapi pastikan predecessor cross-phase (6.10) masih benar mengelompokkan
+   task per fase baru di dropdown-nya.
+
+### Migrasi Data Lama (PENTING)
+Karena data project udah ada tersimpan di localStorage dengan struktur 6 fase lama,
+perlu migration logic supaya project yang sudah dibuat sebelumnya nggak rusak/hilang
+datanya saat aplikasi di-reload dengan struktur baru:
+
+- Saat load project lama (struktur 6 fase), map ke struktur baru dengan skema:
+  - `discovery` → `userRequirement`
+  - `development` → `development`
+  - `testing` → `testing`
+  - `uat` → `uat`
+  - `goLive` → `goLive`
+  - `supportGoLive` → `postImplementationSupport`
+  - Fase baru yang nggak ada padanannya di data lama (`pentest`, `defectdojo`,
+    `projectHandover`) diisi default kosong (start/end null, tasks: [], status
+    NOT_STARTED) — BUKAN dihapus atau bikin project-nya invalid.
+- Migration ini harus jalan otomatis & idempotent (aman dijalankan berkali-kali tanpa
+  merusak data), sama pola dengan migration `tasks` array yang udah pernah dibuat di
+  section 6.9.
+- **Test wajib:** buka project yang dibuat SEBELUM perubahan ini, pastikan datanya
+  ke-migrate dengan benar (fase lama ke-map ke fase baru yang sesuai, bukan hilang),
+  dan project baru yang dibuat SETELAH perubahan langsung pakai 9 fase baru dari awal.
+
+
+
+## 6.12 Dokumentasi Project (Project Documentation Checklist)
+
+### Perubahan Konsep
+Fitur "Milestone" (section 6.7 — user bisa nambah/hapus milestone bebas) diganti total
+jadi **"Dokumentasi Project"**: list tetap berisi 13 jenis dokumen SDLC standar, urutan
+dan nama-nya FIXED (tidak bisa ditambah/dihapus/diubah namanya oleh user), user cuma
+isi **tanggal** dan **link** per item.
+
+### Data Model
+
+```ts
+interface ProjectDocumentation {
+  id: string;            // slug tetap, misal "PROJECT_CHARTER", "RDM", dst
+  nomor: number;          // 1-13, urutan tampil tetap
+  nama: string;            // label tetap, lihat daftar di bawah
+  tanggal: string | null;  // ISO date, diisi user, boleh kosong
+  link: string | null;     // URL, diisi user, boleh kosong
+}
+```
+
+`Project.milestones: Milestone[]` (dari 6.7) **diganti** jadi
+`Project.documentation: ProjectDocumentation[]` — SETIAP project (lama maupun baru)
+otomatis punya 13 entry berikut, urutan tetap:
+
+| No | Nama (id slug) |
+|---|---|
+| 1 | PROJECT CHARTER |
+| 2 | RDM |
+| 3 | BPS |
+| 4 | HLD/TSD |
+| 5 | TEST PLAN |
+| 6 | UAT REPORT |
+| 7 | JUKLAK |
+| 8 | PENTEST REPORT |
+| 9 | WI DEPLOY |
+| 10 | SOURCE CODE |
+| 11 | APPS FORM |
+| 12 | FAQ (if any) |
+| 13 | PROJECT CLOSURE |
+
+### Aturan
+
+1. **Tidak ada tombol "+ Add" atau "Delete"** — 13 item ini selalu ada, di semua project,
+   sejak project dibuat. User cuma bisa **edit** tanggal & link tiap baris.
+2. Baik `tanggal` maupun `link` **opsional** — boleh dikosongin (dokumen belum ada/belum
+   perlu, misal FAQ "(if any)" wajar kosong terus).
+3. Urutan tampil selalu 1-13 sesuai nomor, tidak bisa di-reorder oleh user.
+4. `link` divalidasi format URL dasar (harus mulai `http://` atau `https://`) kalau diisi,
+   tapi tidak divalidasi apakah link-nya beneran hidup/valid.
+5. **Section ini TIDAK lagi muncul di Gantt chart sebagai marker** (beda dari Milestone
+   lama di 6.7 yang muncul sebagai diamond marker di Gantt) — ini alasannya lebih ke
+   checklist administratif, bukan event di timeline. Cukup ditampilkan sebagai section
+   tabel/list terpisah di halaman Detail Project, di luar Gantt.
+6. Rename semua label UI dari "Milestone" jadi **"Dokumentasi Project"** di seluruh
+   aplikasi (judul section, dst).
+
+### UI
+
+- Section "Dokumentasi Project" di halaman Detail Project: tabel/list 13 baris tetap,
+  kolom: No, Nama Dokumen, Tanggal (date picker), Link (text input URL).
+- Auto-save per field (konsisten dengan pola section 9 — bukan tombol Save besar).
+- Baris yang link-nya udah diisi: nama dokumen jadi clickable (buka link di tab baru).
+- Tidak perlu modal konfirmasi apapun (tidak ada aksi destruktif di sini, cuma edit
+  tanggal/link).
+
+### Migrasi Data Lama
+- Project yang sudah ada (dengan `milestones: Milestone[]` gaya lama) di-migrate:
+  **hapus field `milestones` yang lama**, ganti dengan `documentation: ProjectDocumentation[]`
+  berisi 13 item di atas, semua `tanggal: null, link: null` (kosong, karena tidak ada
+  cara otomatis memetakan milestone bebas lama ke 13 kategori tetap ini).
+- Migration harus idempotent, sama pola dengan migration-migration sebelumnya
+  (tasks array di 6.9, phase structure di 6.11).
+- Data milestone lama BOLEH hilang (tidak perlu dipertahankan di tempat lain) — ini
+  memang penggantian konsep, bukan tambahan.
+
 ---
 
 ## 7. Tim Terlibat

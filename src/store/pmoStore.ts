@@ -6,15 +6,22 @@ import type {
   Divisi,
   PhaseKey,
   PhaseData,
-  Milestone,
+  ProjectDocumentation,
   Task,
+  TeamAssignment,
 } from "@/types";
-import { PHASE_ORDER, createEmptyPhase } from "@/types";
+import {
+  PHASE_ORDER,
+  createEmptyPhase,
+  createEmptyTim,
+  createEmptyDocumentation,
+  DOCUMENTATION_ITEMS,
+} from "@/types";
 import { seedProjects, seedTeamMembers } from "@/data/seed";
 import {
-  normalizePhaseData,
   normalizeTimeline,
   removeTaskAndRecomputeProjectWide,
+  recomputeProjectTasks,
   rollupPhaseDates,
   wouldCreateCycle,
 } from "@/utils/taskDates";
@@ -29,7 +36,6 @@ function getHolidays(): Set<string> {
 // ─── ID Generator ───
 let projectCounter = 100;
 let memberCounter = 100;
-let milestoneCounter = 100;
 let taskCounter = 100;
 
 function generateProjectId(): string {
@@ -37,9 +43,6 @@ function generateProjectId(): string {
 }
 function generateMemberId(): string {
   return `tm${++memberCounter}`;
-}
-function generateMilestoneId(): string {
-  return `m${++milestoneCounter}`;
 }
 function generateTaskId(): string {
   return `t${++taskCounter}`;
@@ -71,10 +74,12 @@ interface ProjectActions {
     memberIds: string[]
   ) => void;
 
-  // Milestone CRUD
-  addMilestone: (projectId: string, milestone: Omit<Milestone, "id">) => void;
-  updateMilestone: (projectId: string, milestoneId: string, data: Partial<Omit<Milestone, "id">>) => void;
-  removeMilestone: (projectId: string, milestoneId: string) => void;
+  // §6.12 Documentation — update a single field on a single doc row
+  updateDocumentation: (
+    projectId: string,
+    docId: string,
+    data: Partial<Pick<ProjectDocumentation, "tanggal" | "link">>
+  ) => void;
 
   // Task CRUD
   addTask: (projectId: string, phaseKey: PhaseKey, task: Omit<Task, "id">) => void;
@@ -121,12 +126,6 @@ function initCounters(projects: Project[], members: TeamMember[]) {
     const n = parseInt(m.id.replace("tm", ""), 10);
     return n > max ? n : max;
   }, 0);
-  const maxMilestoneId = projects.reduce((max, p) => {
-    return p.milestones.reduce((mmax, ms) => {
-      const n = parseInt(ms.id.replace("m", ""), 10);
-      return n > mmax ? n : mmax;
-    }, max);
-  }, 0);
   const maxTaskId = projects.reduce((max, p) => {
     return Object.values(p.timeline).reduce((tmax, phase) => {
       return (phase.tasks ?? []).reduce((ttmax, t) => {
@@ -138,7 +137,6 @@ function initCounters(projects: Project[], members: TeamMember[]) {
 
   if (maxPId >= projectCounter) projectCounter = maxPId;
   if (maxMId >= memberCounter) memberCounter = maxMId;
-  if (maxMilestoneId >= milestoneCounter) milestoneCounter = maxMilestoneId;
   if (maxTaskId >= taskCounter) taskCounter = maxTaskId;
 }
 
@@ -158,21 +156,49 @@ function normalizeProject(project: Project): Project {
     getHolidays()
   );
 
-  return { ...project, timeline };
+  // §6.12: ensure documentation array is always the full 13-item list.
+  // If the project has a valid documentation array already (13 items with
+  // the correct ids), leave it untouched. Otherwise seed it fresh.
+  const existingDoc = (project as unknown as Record<string, unknown>).documentation;
+  const documentation = normalizeDocumentation(existingDoc);
+
+  return { ...project, timeline, documentation };
+}
+
+/**
+ * §6.12 migration helper: given whatever is stored under "documentation"
+ * (may be undefined, empty, partial, or already the correct 13-item array),
+ * return a valid 13-item array, preserving any tanggal/link the user has filled.
+ * Idempotent — safe to run on already-migrated data.
+ */
+function normalizeDocumentation(raw: unknown): ProjectDocumentation[] {
+  const base = createEmptyDocumentation();
+
+  if (!Array.isArray(raw) || raw.length === 0) {
+    // Missing entirely (old milestones-era data) or empty — start fresh
+    return base;
+  }
+
+  // Build a map from id → stored entry for quick lookup
+  const stored = new Map<string, Partial<ProjectDocumentation>>();
+  for (const item of raw as Partial<ProjectDocumentation>[]) {
+    if (item?.id) stored.set(item.id, item);
+  }
+
+  // Merge: keep the fixed structure (nomor/nama from DOCUMENTATION_ITEMS),
+  // but preserve any tanggal/link the user already filled in.
+  return base.map((item) => {
+    const existing = stored.get(item.id);
+    return {
+      ...item,
+      tanggal: existing?.tanggal ?? null,
+      link: existing?.link ?? null,
+    };
+  });
 }
 
 function normalizeProjects(projects: Project[]): Project[] {
   return projects.map(normalizeProject);
-}
-
-function applyPhaseTaskUpdate(
-  phase: PhaseData,
-  tasks: Task[]
-): PhaseData {
-  if (tasks.length === 0) {
-    return { ...phase, tasks: [] };
-  }
-  return normalizePhaseData({ ...phase, tasks }, new Date(), getHolidays());
 }
 
 /** Collect all tasks across every phase of a project into a flat array. */
@@ -210,6 +236,23 @@ function now(): string {
   return new Date().toISOString();
 }
 
+/**
+ * §6.11: Post Implementation Support default end = start + 3 months.
+ * Uses local calendar so there's no UTC-midnight drift on positive offsets.
+ */
+function addThreeMonths(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  let targetMonth = m + 2; // 0-indexed: month is m-1, so m+2 = m-1+3
+  let targetYear = y;
+  if (targetMonth > 11) {
+    targetMonth -= 12;
+    targetYear += 1;
+  }
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  const clampedDay = Math.min(d, lastDay);
+  return `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(clampedDay).padStart(2, "0")}`;
+}
+
 // ─── Store ───
 export const usePMOStore = create<PMOStore>()(
   persist(
@@ -234,10 +277,6 @@ export const usePMOStore = create<PMOStore>()(
 
       createProject: (data) => {
         const timestamp = now();
-        // Re-derive a safe counter from the CURRENT persisted projects array
-        // before generating an id. This guards against the module-level counter
-        // being stale after a page reload (initCounters only runs against seed
-        // data at module-load time, not against the persisted state).
         const currentProjects = get().projects;
         const maxExisting = currentProjects.reduce((max, p) => {
           const n = parseInt(p.id.replace("p", ""), 10);
@@ -278,6 +317,19 @@ export const usePMOStore = create<PMOStore>()(
               updated.baselineEnd = data.end;
             }
 
+            // §6.11: Post Implementation Support 3-month default end
+            if (
+              phaseKey === "postImplementationSupport" &&
+              data.start &&
+              !existing.start &&
+              !updated.end
+            ) {
+              updated.end = addThreeMonths(data.start);
+              if (!updated.baselineEnd) {
+                updated.baselineEnd = updated.end;
+              }
+            }
+
             return {
               ...p,
               timeline: { ...p.timeline, [phaseKey]: updated },
@@ -305,49 +357,20 @@ export const usePMOStore = create<PMOStore>()(
         }));
       },
 
-      // ── Milestone CRUD ──
+      // ── §6.12 Documentation CRUD ──
 
-      addMilestone: (projectId, milestone) => {
-        const newMilestone: Milestone = {
-          ...milestone,
-          id: generateMilestoneId(),
-        };
+      updateDocumentation: (projectId, docId, data) => {
         set((state) => ({
-          projects: state.projects.map((p) =>
-            p.id === projectId
-              ? { ...p, milestones: [...p.milestones, newMilestone], updatedAt: now() }
-              : p
-          ),
-        }));
-      },
-
-      updateMilestone: (projectId, milestoneId, data) => {
-        set((state) => ({
-          projects: state.projects.map((p) =>
-            p.id === projectId
-              ? {
-                  ...p,
-                  milestones: p.milestones.map((m) =>
-                    m.id === milestoneId ? { ...m, ...data } : m
-                  ),
-                  updatedAt: now(),
-                }
-              : p
-          ),
-        }));
-      },
-
-      removeMilestone: (projectId, milestoneId) => {
-        set((state) => ({
-          projects: state.projects.map((p) =>
-            p.id === projectId
-              ? {
-                  ...p,
-                  milestones: p.milestones.filter((m) => m.id !== milestoneId),
-                  updatedAt: now(),
-                }
-              : p
-          ),
+          projects: state.projects.map((p) => {
+            if (p.id !== projectId) return p;
+            return {
+              ...p,
+              documentation: p.documentation.map((doc) =>
+                doc.id === docId ? { ...doc, ...data } : doc
+              ),
+              updatedAt: now(),
+            };
+          }),
         }));
       },
 
@@ -362,14 +385,6 @@ export const usePMOStore = create<PMOStore>()(
           projects: state.projects.map((p) => {
             if (p.id !== projectId) return p;
             const phase = p.timeline[phaseKey];
-            // Append raw — do NOT recompute here.
-            // A brand-new task has predecessorIds:[] and start:null by design
-            // (spec §6.9: "start = date user explicitly sets, OR default to today
-            // if never set"). Triggering recomputePhaseTasks would immediately
-            // anchor start=today and persist it before the user has touched
-            // anything, making start look user-set on the very next render.
-            // Recompute only fires when the user actually changes duration,
-            // predecessors, or start date (all go through updateTask).
             return {
               ...p,
               timeline: {
@@ -382,14 +397,10 @@ export const usePMOStore = create<PMOStore>()(
         }));
       },
 
-      updateTask: (projectId, phaseKey, taskId, data) => {
+      updateTask: (projectId, _phaseKey, taskId, data) => {
         const project = get().projects.find((p) => p.id === projectId);
         if (!project) return false;
 
-        const phase = project.timeline[phaseKey];
-        const tasks = phase.tasks ?? [];
-
-        // §6.10: cycle check must use ALL project tasks, not just one phase
         if (data.predecessorIds !== undefined) {
           const allTasks = getAllProjectTasks(project);
           if (wouldCreateCycle(allTasks, taskId, data.predecessorIds)) {
@@ -397,22 +408,15 @@ export const usePMOStore = create<PMOStore>()(
           }
         }
 
-        const updatedTasks = tasks.map((t) =>
-          t.id === taskId ? { ...t, ...data } : t
-        );
-
         set((state) => ({
           projects: state.projects.map((p) => {
             if (p.id !== projectId) return p;
-            const currentPhase = p.timeline[phaseKey];
-            return {
-              ...p,
-              timeline: {
-                ...p.timeline,
-                [phaseKey]: applyPhaseTaskUpdate(currentPhase, updatedTasks),
-              },
-              updatedAt: now(),
-            };
+            const allTasks = getAllProjectTasks(p).map((t) =>
+              t.id === taskId ? { ...t, ...data } : t
+            );
+            const recomputed = recomputeProjectTasks(allTasks, new Date(), getHolidays());
+            const updatedTimeline = applyProjectTaskUpdate(p, recomputed);
+            return { ...p, timeline: updatedTimeline, updatedAt: now() };
           }),
         }));
         return true;
@@ -516,29 +520,66 @@ export const usePMOStore = create<PMOStore>()(
     }),
     {
       name: "pmo-workflow-store",
-      version: 2,
+      version: 5,
       migrate: (persistedState, version) => {
         const state = persistedState as PMOState;
         if (!state?.projects) return state as PMOStore;
 
+        // ── §6.11 Phase key migration mapping (still needed for pre-v4 data) ──
+        const OLD_TO_NEW_PHASE_MAP: Record<string, string> = {
+          discovery:    "userRequirement",
+          development:  "development",
+          testing:      "testing",
+          uat:          "uat",
+          goLive:       "goLive",
+          supportGoLive:"postImplementationSupport",
+        };
+
+        function migrateTimeline(
+          rawTimeline: Record<string, PhaseData> | undefined
+        ): Record<PhaseKey, PhaseData> {
+          const result: Record<string, PhaseData> = Object.fromEntries(
+            PHASE_ORDER.map((k) => [k, createEmptyPhase()])
+          );
+          if (!rawTimeline) return result as Record<PhaseKey, PhaseData>;
+
+          for (const key of PHASE_ORDER) {
+            if (rawTimeline[key]) {
+              result[key] = {
+                ...createEmptyPhase(),
+                ...rawTimeline[key],
+                tasks: (rawTimeline[key] as PhaseData).tasks ?? [],
+              };
+            }
+          }
+          for (const [oldKey, newKey] of Object.entries(OLD_TO_NEW_PHASE_MAP)) {
+            if (rawTimeline[oldKey] && !rawTimeline[newKey]) {
+              result[newKey] = {
+                ...createEmptyPhase(),
+                ...rawTimeline[oldKey],
+                tasks: (rawTimeline[oldKey] as PhaseData).tasks ?? [],
+              };
+            }
+          }
+          return result as Record<PhaseKey, PhaseData>;
+        }
+
         const migrated: PMOState = {
           ...state,
           projects: state.projects.map((p) => {
-            const timeline = Object.fromEntries(
-              PHASE_ORDER.map((key) => {
-                const raw = p.timeline?.[key] ?? createEmptyPhase();
-                return [
-                  key,
-                  {
-                    ...createEmptyPhase(),
-                    ...raw,
-                    tasks: raw.tasks ?? [],
-                  },
-                ];
-              })
-            ) as Record<PhaseKey, PhaseData>;
+            const timeline = migrateTimeline(
+              p.timeline as unknown as Record<string, PhaseData>
+            );
+            const emptyTim = createEmptyTim();
+            const tim = { ...emptyTim, ...p.tim } as TeamAssignment;
 
-            return normalizeProject({ ...p, timeline });
+            // §6.12: migrate documentation — drop old milestones, seed fresh 13-item array.
+            // normalizeDocumentation handles: missing field, empty array, partial array,
+            // and already-complete array (idempotent).
+            const rawDoc = (p as unknown as Record<string, unknown>).documentation;
+            const documentation = normalizeDocumentation(rawDoc);
+
+            return normalizeProject({ ...p, tim, timeline, documentation });
           }),
         };
 
@@ -551,3 +592,6 @@ export const usePMOStore = create<PMOStore>()(
     }
   )
 );
+
+// Keep DOCUMENTATION_ITEMS accessible for components that need the ordered list
+export { DOCUMENTATION_ITEMS };
