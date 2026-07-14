@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>WebPMO</title>
+    <script>
+      // SPA redirect for GitHub Pages
+      // When GitHub Pages 404s on a direct URL (e.g. /WebPMO/projects/hotd1),
+      // it serves this file. We capture the intended path, store it in
+      // sessionStorage, then redirect to the app root. The script in index.html
+      // reads it back and replaces the history entry with the correct URL.
+      //
+      // Technique: https://github.com/rafgraph/spa-github-pages
+      // The segment count (1) matches the number of path segments in the base:
+      //   /WebPMO/ has 1 segment, so we preserve everything after it.
+      var pathSegmentsToKeep = 1;
+      var l = window.location;
+      l.replace(
+        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?p=/' +
+        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+        (l.search ? '&q=' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+        l.hash
+      );
+    </script>
+  </head>
+  <body></body>
+</html>
