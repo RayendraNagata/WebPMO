@@ -51,13 +51,16 @@ export interface PhaseData {
 
 // ─── §6.12: Project Documentation Checklist ───
 // Replaces the old free-form Milestone concept.
-// 13 fixed items per project — user only fills tanggal + link per row.
+// 13 fixed items per project — user fills tanggal, link, and status per row.
+export type DocStatus = "NOT_YET" | "COMPLETED" | "NOT_NEEDED";
+
 export interface ProjectDocumentation {
   id: string;           // fixed slug, e.g. "PROJECT_CHARTER", "RDM"
   nomor: number;        // 1–13, fixed display order
   nama: string;         // fixed label, e.g. "PROJECT CHARTER"
   tanggal: string | null; // ISO date, user-filled, optional
   link: string | null;    // URL, user-filled, optional
+  status: DocStatus;    // NOT_YET (default) | COMPLETED | NOT_NEEDED
 }
 
 /** The 13 fixed documentation items, in order. Used to seed and migrate. */
@@ -83,6 +86,7 @@ export function createEmptyDocumentation(): ProjectDocumentation[] {
     ...item,
     tanggal: null,
     link: null,
+    status: "NOT_YET" as DocStatus,
   }));
 }
 

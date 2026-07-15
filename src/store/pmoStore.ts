@@ -78,7 +78,7 @@ interface ProjectActions {
   updateDocumentation: (
     projectId: string,
     docId: string,
-    data: Partial<Pick<ProjectDocumentation, "tanggal" | "link">>
+    data: Partial<Pick<ProjectDocumentation, "tanggal" | "link" | "status">>
   ) => void;
 
   // Task CRUD
@@ -186,13 +186,15 @@ function normalizeDocumentation(raw: unknown): ProjectDocumentation[] {
   }
 
   // Merge: keep the fixed structure (nomor/nama from DOCUMENTATION_ITEMS),
-  // but preserve any tanggal/link the user already filled in.
+  // but preserve any tanggal/link/status the user already filled in.
+  // status defaults to "NOT_YET" if not present (handles pre-status data in localStorage).
   return base.map((item) => {
     const existing = stored.get(item.id);
     return {
       ...item,
       tanggal: existing?.tanggal ?? null,
       link: existing?.link ?? null,
+      status: existing?.status ?? "NOT_YET",
     };
   });
 }
@@ -520,7 +522,7 @@ export const usePMOStore = create<PMOStore>()(
     }),
     {
       name: "pmo-workflow-store",
-      version: 5,
+      version: 6,
       migrate: (persistedState, version) => {
         const state = persistedState as PMOState;
         if (!state?.projects) return state as PMOStore;

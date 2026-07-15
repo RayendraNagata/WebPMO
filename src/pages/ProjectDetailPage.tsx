@@ -194,7 +194,7 @@ export default function ProjectDetailPage() {
 
   // ─── §6.12 Documentation update (auto-save per field) ───
   const handleUpdateDocumentation = useCallback(
-    (docId: string, data: Partial<Pick<ProjectDocumentation, "tanggal" | "link">>) => {
+    (docId: string, data: Partial<Pick<ProjectDocumentation, "tanggal" | "link" | "status">>) => {
       updateDocumentation(project.id, docId, data);
     },
     [project.id, updateDocumentation]
