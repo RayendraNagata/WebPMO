@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import { ArrowLeft, Info, ExternalLink } from "lucide-react";
 import { usePMOStore } from "@/store/pmoStore";
 import type { ProjectStatus, TeamAssignment } from "@/types";
@@ -28,12 +28,23 @@ function validate(nama: string, deskripsi: string): FormErrors {
 export default function ProjectFormPage() {
   const { divisi, projectId } = useParams<{ divisi: string; projectId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const isEdit = !!projectId && projectId !== "new";
   const showManageTimelineTeam = isEdit;
 
   const divisiEnum = divisi ? DIVISI_SLUG_MAP[divisi] : undefined;
   const divisiLabel = divisiEnum ? DIVISI_LABELS[divisiEnum] : "";
   const slug = divisi ?? "";
+
+  // ── Where to go on Cancel / Save ──
+  // "from: detail" means the user clicked Edit on the Detail page.
+  // In that case Cancel/Back and Save should return to the Detail page, not the list.
+  // "from: list" or absent means the user came from the project list row's edit pencil.
+  const locationState = location.state as { from?: string } | null;
+  const cameFromDetail = locationState?.from === "detail";
+  const returnDestination = isEdit && cameFromDetail
+    ? `/projects/${slug}/${projectId}`
+    : `/projects/${slug}`;
 
   const getProjectById = usePMOStore((s) => s.getProjectById);
   const createProject = usePMOStore((s) => s.createProject);
@@ -125,7 +136,9 @@ export default function ProjectFormPage() {
         tim,
       });
       useToastStore.getState().addToast(`Project "${nama.trim()}" updated successfully`);
-      navigate(`/projects/${slug}`);
+      // Return to where the user came from: Detail page (if they clicked Edit there)
+      // or the project list (if they clicked the edit pencil on the list).
+      navigate(returnDestination);
     } else if (divisiEnum) {
       const blank = createBlankProject(divisiEnum);
       const newProject = createProject({
@@ -147,7 +160,7 @@ export default function ProjectFormPage() {
       setPendingNavigation(null);
       setShowCancelModal(true);
     } else {
-      navigate(-1);
+      navigate(returnDestination);
     }
   };
 
@@ -164,16 +177,16 @@ export default function ProjectFormPage() {
 
   const handleDiscardConfirm = () => {
     if (pendingNavigation) {
-      // If discarding to go to the detail/timeline page (from "Manage Timeline & Team"),
-      // carry the from:"edit" state so the Back button on that page returns here.
-      const isDetailNav =
-        pendingNavigation === `/projects/${slug}/${projectId}`;
+      // Navigating to detail via "Manage Timeline & Team" — pass from:"edit" so
+      // the Detail page's Back button returns here.
+      const isDetailNav = pendingNavigation === `/projects/${slug}/${projectId}`;
       navigate(
         pendingNavigation,
         isDetailNav ? { state: { from: "edit" } } : undefined
       );
     } else {
-      navigate(-1);
+      // Plain cancel — go back to where we came from (detail or list).
+      navigate(returnDestination);
     }
     setShowCancelModal(false);
     setPendingNavigation(null);
@@ -222,6 +235,11 @@ export default function ProjectFormPage() {
 
   const hasErrors = Object.keys(errors).length > 0;
 
+  // Back button label: show project name if returning to Detail, division name if returning to list
+  const backLabel = isEdit && cameFromDetail
+    ? `Back to ${existingProject?.nama ?? "Project"}`
+    : `Back to ${divisiLabel}`;
+
   return (
     <div className="max-w-2xl">
       <button
@@ -229,7 +247,7 @@ export default function ProjectFormPage() {
         className="inline-flex items-center gap-1.5 text-sm text-steel hover:text-ink mb-6 transition-colors cursor-pointer"
       >
         <ArrowLeft size={15} />
-        Back to {divisiLabel}
+        {backLabel}
       </button>
 
       <h1 className="text-2xl font-semibold text-ink mb-1">

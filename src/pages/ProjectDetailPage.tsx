@@ -272,6 +272,7 @@ export default function ProjectDetailPage() {
           </button>
           <Link
             to={`/projects/${slug}/${project.id}/edit`}
+            state={{ from: "detail" }}
             className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium text-ink border border-hairline-strong hover:bg-surface transition-colors"
           >
             <Edit size={15} />

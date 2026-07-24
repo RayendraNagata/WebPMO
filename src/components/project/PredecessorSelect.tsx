@@ -3,14 +3,11 @@
  *
  * Mirrors the RoleSelect pattern in TeamAssignment.tsx:
  *   - Closed: shows removable chips + trigger button (placeholder when empty)
- *   - Open: search input + scrollable checklist with checkbox visuals
- *   - Zero local copy of the selection — reads/writes directly via props
+ *   - Open: search input + scrollable checklist grouped by phase
+ *   - Selected items pinned at top of the list for quick access
  *
- * Cycle detection and error display live in the parent (TaskRow), keeping this
- * component purely presentational about which IDs are selected.
- *
- * §6.10 Part A: Tasks are grouped by phase in the dropdown, and a warning badge
- * appears when a selected predecessor is from a later phase than the task itself.
+ * §6.10 Part A: tasks grouped by phase; warning badge when a selected predecessor
+ * is from a later phase than the task itself.
  */
 import { useState, useMemo, useRef, useEffect } from "react";
 import { X, ChevronDown, Search, AlertTriangle } from "lucide-react";
@@ -19,17 +16,11 @@ import { PHASE_ORDER, PHASE_LABELS } from "@/types";
 import { isLaterPhase } from "@/utils/taskDates";
 
 interface Props {
-  /** The task that owns this predecessor selector (used to exclude self). */
   taskId: string;
-  /** Current predecessorIds — read directly from the task prop, never copied locally. */
   selectedIds: string[];
-  /** All tasks in the project (pool to select from, cross-phase). */
   availableTasks: Task[];
-  /** The phase this task belongs to (for warning badge logic). */
   taskPhaseKey: PhaseKey;
-  /** Called with the NEW full array when the user toggles or removes an entry. */
   onChange: (newIds: string[]) => void;
-  /** Cycle / validation error to display below the field (managed by parent). */
   error?: string | null;
 }
 
@@ -46,7 +37,7 @@ export default function PredecessorSelect({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Close on outside click — same pattern as RoleSelect
+  // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -58,39 +49,40 @@ export default function PredecessorSelect({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Options: every task in the project except this task itself, grouped by phase
+  // All candidate tasks (every task in project except self), grouped by phase
   const optionsByPhase = useMemo(() => {
     const grouped = new Map<PhaseKey, Task[]>();
-    for (const key of PHASE_ORDER) {
-      grouped.set(key, []);
-    }
+    for (const key of PHASE_ORDER) grouped.set(key, []);
     for (const t of availableTasks) {
-      if (t.id !== taskId) {
-        grouped.get(t.phaseKey)!.push(t);
-      }
+      if (t.id !== taskId) grouped.get(t.phaseKey)?.push(t);
     }
     return grouped;
   }, [availableTasks, taskId]);
 
-  // Filtered options by search (still grouped)
+  // Filter by search — empty groups are hidden
   const filteredByPhase = useMemo(() => {
     if (!search.trim()) return optionsByPhase;
     const q = search.toLowerCase();
     const filtered = new Map<PhaseKey, Task[]>();
     for (const [key, tasks] of optionsByPhase) {
-      const matching = tasks.filter((t) => (t.nama || "Unnamed").toLowerCase().includes(q));
-      filtered.set(key, matching);
+      filtered.set(key, tasks.filter((t) => (t.nama || "Unnamed").toLowerCase().includes(q)));
     }
     return filtered;
   }, [optionsByPhase, search]);
 
-  // Resolve selected task details for chip display
+  // Separate selected tasks for the pinned "Selected" section at the top of the list
   const selectedTasks = useMemo(
     () =>
       selectedIds
         .map((id) => availableTasks.find((t) => t.id === id))
         .filter((t): t is Task => t !== undefined),
     [selectedIds, availableTasks]
+  );
+
+  // True when all phase groups are empty after filtering
+  const noResults = useMemo(
+    () => Array.from(filteredByPhase.values()).every((tasks) => tasks.length === 0),
+    [filteredByPhase]
   );
 
   const handleToggle = (id: string) => {
@@ -100,23 +92,51 @@ export default function PredecessorSelect({
     onChange(next);
   };
 
-  const handleRemoveChip = (id: string) => {
-    onChange(selectedIds.filter((x) => x !== id));
-  };
-
-  const handleClearAll = () => {
-    onChange([]);
-  };
+  const handleRemoveChip = (id: string) => onChange(selectedIds.filter((x) => x !== id));
+  const handleClearAll = () => onChange([]);
 
   const openDropdown = () => {
     setIsOpen(true);
-    // Focus the search input after the dropdown renders
     setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  // Shared row renderer used in both the "Selected" pin section and the phase groups
+  const TaskRow = ({ t }: { t: Task }) => {
+    const isSelected = selectedIds.includes(t.id);
+    const isLater = isLaterPhase(t.phaseKey, taskPhaseKey);
+    return (
+      <button
+        type="button"
+        onClick={() => handleToggle(t.id)}
+        className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors cursor-pointer ${
+          isSelected ? "bg-brand-blue/5 text-ink" : "text-ink hover:bg-surface"
+        }`}
+      >
+        {/* Checkbox visual */}
+        <span
+          className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
+            isSelected ? "bg-brand-blue border-brand-blue" : "border-hairline-strong bg-canvas"
+          }`}
+        >
+          {isSelected && (
+            <svg width="9" height="7" viewBox="0 0 10 8" fill="none">
+              <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+        </span>
+        <span className="flex-1 text-left truncate">{t.nama || "Unnamed"}</span>
+        {isLater && (
+          <span title="Predecessor from a later phase">
+            <AlertTriangle size={10} className="text-amber-500 flex-shrink-0" />
+          </span>
+        )}
+      </button>
+    );
   };
 
   return (
     <div>
-      {/* ── Chips for selected predecessors ── */}
+      {/* ── Selected chips above trigger ── */}
       {selectedTasks.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-1.5">
           {selectedTasks.map((t) => {
@@ -129,16 +149,10 @@ export default function PredecessorSelect({
                     ? "bg-amber-50 text-amber-700 border border-amber-200"
                     : "bg-brand-blue/10 text-brand-blue"
                 }`}
-                title={
-                  isLater
-                    ? `${t.nama || "Unnamed"} (from ${PHASE_LABELS[t.phaseKey]} - later phase)`
-                    : t.nama || "Unnamed"
-                }
+                title={isLater ? `${t.nama || "Unnamed"} (from ${PHASE_LABELS[t.phaseKey]} — later phase)` : undefined}
               >
                 {t.nama || "Unnamed"}
-                {isLater && (
-                  <AlertTriangle size={10} className="text-amber-600 flex-shrink-0" />
-                )}
+                {isLater && <AlertTriangle size={10} className="text-amber-600 flex-shrink-0" />}
                 <button
                   type="button"
                   onClick={() => handleRemoveChip(t.id)}
@@ -155,7 +169,6 @@ export default function PredecessorSelect({
               type="button"
               onClick={handleClearAll}
               className="text-[10px] text-stone hover:text-danger transition-colors cursor-pointer self-center ml-0.5"
-              title="Clear all predecessors"
             >
               Clear all
             </button>
@@ -165,7 +178,7 @@ export default function PredecessorSelect({
 
       {/* ── Dropdown ── */}
       <div ref={dropdownRef} className="relative">
-        {/* Trigger button */}
+        {/* Trigger */}
         <button
           type="button"
           onClick={openDropdown}
@@ -184,22 +197,18 @@ export default function PredecessorSelect({
               ? "1 predecessor"
               : `${selectedIds.length} predecessors`}
           </span>
-          <ChevronDown
-            size={13}
-            className={`flex-shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}
-          />
+          <ChevronDown size={13} className={`flex-shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
         </button>
 
-        {/* Dropdown panel */}
+        {/* Panel — min-width matches trigger, max-width capped to avoid overflow */}
         {isOpen && (
-          <div className="absolute top-full left-0 z-30 mt-1 w-56 bg-canvas rounded-lg border border-hairline shadow-lg overflow-hidden">
+          <div className="absolute top-full left-0 z-30 mt-1 bg-canvas rounded-lg border border-hairline shadow-lg overflow-hidden"
+               style={{ minWidth: "100%", width: "max-content", maxWidth: "320px" }}>
+
             {/* Search */}
             <div className="p-1.5 border-b border-hairline-soft">
               <div className="relative">
-                <Search
-                  size={12}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 text-stone"
-                />
+                <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-stone" />
                 <input
                   ref={inputRef}
                   type="text"
@@ -211,66 +220,40 @@ export default function PredecessorSelect({
               </div>
             </div>
 
-            {/* Option list — grouped by phase */}
-            <div className="overflow-y-auto max-h-44 py-0.5">
-              {Array.from(filteredByPhase.entries()).every(([_, tasks]) => tasks.length === 0) ? (
+            {/* Scrollable list */}
+            <div className="overflow-y-auto max-h-64 py-0.5">
+              {noResults ? (
                 <p className="px-3 py-2 text-xs text-stone italic">No match</p>
               ) : (
-                Array.from(filteredByPhase.entries()).map(([phaseKey, tasks]) => {
-                  if (tasks.length === 0) return null;
-                  return (
-                    <div key={phaseKey}>
-                      {/* Phase header */}
-                      <div className="px-3 py-1 bg-surface/50 text-[10px] font-semibold text-steel uppercase tracking-wide sticky top-0">
-                        {PHASE_LABELS[phaseKey]}
+                <>
+                  {/* ── Pinned: already-selected tasks at top ── */}
+                  {selectedTasks.length > 0 && !search && (
+                    <div>
+                      <div className="px-3 py-1 bg-brand-blue/5 text-[10px] font-semibold text-brand-blue uppercase tracking-wide">
+                        Selected ({selectedTasks.length})
                       </div>
-                      {/* Tasks in this phase */}
-                      {tasks.map((t) => {
-                        const isSelected = selectedIds.includes(t.id);
-                        return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => handleToggle(t.id)}
-                            className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors cursor-pointer ${
-                              isSelected
-                                ? "bg-brand-blue/5 text-ink"
-                                : "text-ink hover:bg-surface"
-                            }`}
-                          >
-                            {/* Checkbox visual */}
-                            <span
-                              className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0 transition-colors ${
-                                isSelected
-                                  ? "bg-brand-blue border-brand-blue"
-                                  : "border-hairline-strong bg-canvas"
-                              }`}
-                            >
-                              {isSelected && (
-                                <svg width="9" height="7" viewBox="0 0 10 8" fill="none">
-                                  <path
-                                    d="M1 4L3.5 6.5L9 1"
-                                    stroke="white"
-                                    strokeWidth="1.5"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                  />
-                                </svg>
-                              )}
-                            </span>
-                            <span className="flex-1 text-left truncate">
-                              {t.nama || "Unnamed"}
-                            </span>
-                          </button>
-                        );
-                      })}
+                      {selectedTasks.map((t) => <TaskRow key={t.id} t={t} />)}
+                      <div className="border-t border-hairline-soft my-0.5" />
                     </div>
-                  );
-                })
+                  )}
+
+                  {/* ── Phase groups ── */}
+                  {Array.from(filteredByPhase.entries()).map(([phaseKey, tasks]) => {
+                    if (tasks.length === 0) return null;
+                    return (
+                      <div key={phaseKey}>
+                        <div className="px-3 py-1 bg-surface/60 text-[10px] font-semibold text-steel uppercase tracking-wide">
+                          {PHASE_LABELS[phaseKey]}
+                        </div>
+                        {tasks.map((t) => <TaskRow key={t.id} t={t} />)}
+                      </div>
+                    );
+                  })}
+                </>
               )}
             </div>
 
-            {/* Footer: clear all (shown only when something is selected) */}
+            {/* Footer: clear all */}
             {selectedIds.length > 0 && (
               <div className="border-t border-hairline-soft px-3 py-1.5">
                 <button
@@ -286,7 +269,7 @@ export default function PredecessorSelect({
         )}
       </div>
 
-      {/* Error message */}
+      {/* Error */}
       {error && (
         <p className="text-[10px] text-danger mt-1 leading-tight">{error}</p>
       )}

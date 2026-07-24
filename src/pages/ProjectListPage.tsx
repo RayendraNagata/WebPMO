@@ -325,6 +325,7 @@ function ProjectRow({ project, slug }: { project: Project; slug: string }) {
           <div className="inline-flex items-center gap-1">
             <Link
               to={`/projects/${slug}/${project.id}/edit`}
+              state={{ from: "list" }}
               className="p-1.5 rounded-md text-stone hover:text-ink hover:bg-surface transition-colors"
               title="Edit"
             >
